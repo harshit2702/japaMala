@@ -2,7 +2,7 @@
     "name": "Japa Mala",
     "short_name": "Japa",
     "description": "A minimalist digital Japa Mala counter",
-    "start_url": "/index.html",
+    "start_url": "./index.html",
     "display": "standalone",
     "background_color": "#1a1a2e",
     "theme_color": "#1a1a2e",

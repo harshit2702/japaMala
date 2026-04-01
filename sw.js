@@ -1,10 +1,10 @@
-const CACHE_NAME = 'japa-mala-v1';
+const CACHE_NAME = 'japa-mala-v2';
 const urlsToCache = [
-    '/',
-    '/index.html',
-    '/style.css',
-    '/app.js',
-    '/manifest.json'
+    './',
+    './index.html',
+    './style.css',
+    './app.js',
+    './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
