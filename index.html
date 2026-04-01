@@ -12,11 +12,15 @@
 </head>
 <body>
     <main class="app">
+        <div class="top-actions">
+            <button id="recalibrateBtn" class="recalibrate-btn" type="button" disabled>Recalibrate</button>
+        </div>
+
         <div class="counter-wrap" aria-live="polite">
             <div id="counter" class="counter">0</div>
         </div>
 
-        <button id="startBtn" class="start-btn" type="button">Calibrate &amp; Start</button>
+        <button id="startBtn" class="start-btn" type="button" aria-label="Calibrate and start">Tilt / Touch</button>
 
         <p class="rounds" aria-live="polite">
             <span>Total Rounds</span>

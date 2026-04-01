@@ -6,6 +6,14 @@ const COUNTER_LIMIT = 108;
 const ARM_THRESHOLD = 40;
 const RESET_THRESHOLD = 10;
 
+function supportsOrientationSensor() {
+    return typeof window.DeviceOrientationEvent !== 'undefined';
+}
+
+function supportsOrientationPermissionPrompt() {
+    return typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function';
+}
+
 const state = {
     started: false,
     counter: 0,
@@ -13,16 +21,19 @@ const state = {
     audioContext: null,
     baseline: null,
     axis: null,
-    armed: false
+    armed: false,
+    inputMode: supportsOrientationSensor() ? 'tilt-touch' : 'touch'
 };
 
 const counterEl = document.getElementById('counter');
 const roundsEl = document.getElementById('rounds');
 const startBtn = document.getElementById('startBtn');
+const recalibrateBtn = document.getElementById('recalibrateBtn');
 const statusEl = document.getElementById('status');
 
 roundsEl.textContent = String(state.totalRounds);
-setStatus('Press start to calibrate the sensor.');
+syncControls();
+setStatus('Press the button to calibrate the sensor.');
 
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -49,6 +60,53 @@ function writeStoredNumber(key, value) {
         localStorage.setItem(key, String(value));
     } catch {
         // Storage can fail in private browsing; keep the session running.
+    }
+}
+
+function getModeLabel() {
+    return state.inputMode === 'touch' ? 'Touch' : 'Tilt / Touch';
+}
+
+function syncControls() {
+    startBtn.textContent = getModeLabel();
+    startBtn.disabled = state.started;
+    recalibrateBtn.disabled = !state.started;
+}
+
+function setInputMode(permission) {
+    if (!supportsOrientationSensor()) {
+        state.inputMode = 'touch';
+    } else if (permission === 'denied') {
+        state.inputMode = 'touch';
+    } else {
+        state.inputMode = 'tilt-touch';
+    }
+
+    syncControls();
+}
+
+function resetCalibrationState() {
+    state.baseline = null;
+    state.axis = null;
+    state.armed = false;
+    counterEl.classList.remove('pulse');
+}
+
+function calibrationPrompt() {
+    return state.inputMode === 'touch'
+        ? 'Touch mode active. Tap anywhere to count.'
+        : 'Hold the phone steady for calibration.';
+}
+
+async function requestOrientationPermission() {
+    if (!supportsOrientationPermissionPrompt()) {
+        return 'granted';
+    }
+
+    try {
+        return await DeviceOrientationEvent.requestPermission();
+    } catch {
+        return 'denied';
     }
 }
 
@@ -212,48 +270,45 @@ async function startSession() {
     }
 
     state.started = true;
-    startBtn.disabled = true;
-    startBtn.textContent = 'Running';
+    syncControls();
 
     const audioReadyPromise = initAudio();
 
     window.addEventListener('deviceorientation', handleOrientation, { passive: true });
 
-    let permissionPromise = Promise.resolve('granted');
-    let permissionIsSupported = false;
+    const permission = await requestOrientationPermission();
+    setInputMode(permission);
 
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        try {
-            permissionIsSupported = true;
-            permissionPromise = DeviceOrientationEvent.requestPermission().catch(() => 'denied');
-        } catch {
-            permissionPromise = Promise.resolve('denied');
-        }
-    }
-
-    const permission = await permissionPromise;
     await audioReadyPromise;
 
-    if (permissionIsSupported) {
-        if (permission === 'granted') {
-            setStatus('Hold the phone steady for calibration.');
-        } else {
-            setStatus('Orientation permission denied. Tap anywhere to count.');
-        }
+    setStatus(calibrationPrompt());
+}
+
+async function recalibrateSession() {
+    if (!state.started) {
         return;
     }
 
-    setStatus('Hold the phone steady for calibration.');
+    resetCalibrationState();
+
+    const audioReadyPromise = initAudio();
+    const permission = await requestOrientationPermission();
+    setInputMode(permission);
+
+    await audioReadyPromise;
+
+    setStatus(calibrationPrompt());
 }
 
 startBtn.addEventListener('click', startSession);
+recalibrateBtn.addEventListener('click', recalibrateSession);
 
 document.addEventListener('click', (event) => {
     if (!state.started) {
         return;
     }
 
-    if (event.target.closest('#startBtn')) {
+    if (event.target.closest('button')) {
         return;
     }
 

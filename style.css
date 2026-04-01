@@ -60,6 +60,16 @@ body::after {
     text-align: center;
 }
 
+.top-actions {
+    position: absolute;
+    top: 0.9rem;
+    right: 0.9rem;
+    left: 0.9rem;
+    display: flex;
+    justify-content: flex-end;
+    pointer-events: none;
+}
+
 .counter-wrap {
     min-height: min(48svh, 26rem);
     display: grid;
@@ -79,6 +89,48 @@ body::after {
 
 .counter.pulse {
     animation: counterPulse 180ms ease-out;
+}
+
+.recalibrate-btn {
+    pointer-events: auto;
+    appearance: none;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 0.85rem;
+    padding: 0.7rem 0.95rem;
+    min-width: 8.2rem;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+    transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.recalibrate-btn:hover {
+    background: rgba(255, 255, 255, 0.11);
+    transform: translateY(-1px);
+    box-shadow: 0 14px 28px rgba(0, 0, 0, 0.26);
+}
+
+.recalibrate-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+}
+
+.recalibrate-btn:disabled {
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(245, 239, 228, 0.34);
+    box-shadow: none;
+    cursor: default;
+    transform: none;
+}
+
+.recalibrate-btn:focus-visible {
+    outline: 2px solid var(--accent-strong);
+    outline-offset: 3px;
 }
 
 @keyframes counterPulse {
