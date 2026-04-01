@@ -1,178 +1,261 @@
-// PWA Service Worker Registration
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-}
+const STORAGE_KEYS = {
+    totalRounds: 'japaTotalRounds'
+};
 
-// State
-let counter = 0;
-let rounds = 0;
-let audioContext = null;
-let isStarted = false;
-let baselineGamma = null;
-let isTwisting = false;
+const COUNTER_LIMIT = 108;
+const ARM_THRESHOLD = 40;
+const RESET_THRESHOLD = 10;
 
-// DOM Elements
+const state = {
+    started: false,
+    counter: 0,
+    totalRounds: readStoredNumber(STORAGE_KEYS.totalRounds, 0),
+    audioContext: null,
+    baseline: null,
+    axis: null,
+    armed: false
+};
+
 const counterEl = document.getElementById('counter');
 const roundsEl = document.getElementById('rounds');
 const startBtn = document.getElementById('startBtn');
 const statusEl = document.getElementById('status');
 
-// Load saved rounds
-const savedRounds = localStorage.getItem('japaRounds');
-if (savedRounds) {
-    rounds = parseInt(savedRounds, 10);
-    roundsEl.textContent = rounds;
-}
+roundsEl.textContent = String(state.totalRounds);
+setStatus('Press start to calibrate the sensor.');
 
-// Audio Context initialization
-function initAudio() {
-    if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    }
-}
-
-// Play tick sound
-function playTick() {
-    if (!audioContext) return;
-    
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
-    oscillator.frequency.value = 800;
-    oscillator.type = 'sine';
-    
-    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-    
-    oscillator.start(audioContext.currentTime);
-    oscillator.stop(audioContext.currentTime + 0.1);
-}
-
-// Play success chime
-function playSuccessChime() {
-    if (!audioContext) return;
-    
-    const now = audioContext.currentTime;
-    
-    [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        oscillator.frequency.value = freq;
-        oscillator.type = 'sine';
-        
-        gainNode.gain.setValueAtTime(0, now + i * 0.05);
-        gainNode.gain.linearRampToValueAtTime(0.2, now + i * 0.05 + 0.02);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, now + i * 0.05 + 0.5);
-        
-        oscillator.start(now + i * 0.05);
-        oscillator.stop(now + i * 0.05 + 0.5);
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
     });
 }
 
-// Pulse animation
+function readStoredNumber(key, fallback) {
+    try {
+        const storedValue = localStorage.getItem(key);
+        if (storedValue === null) {
+            return fallback;
+        }
+
+        const parsedValue = Number.parseInt(storedValue, 10);
+        return Number.isNaN(parsedValue) ? fallback : parsedValue;
+    } catch {
+        return fallback;
+    }
+}
+
+function writeStoredNumber(key, value) {
+    try {
+        localStorage.setItem(key, String(value));
+    } catch {
+        // Storage can fail in private browsing; keep the session running.
+    }
+}
+
+function setStatus(message) {
+    statusEl.textContent = message;
+}
+
+async function initAudio() {
+    if (!state.audioContext) {
+        const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextCtor) {
+            return null;
+        }
+
+        state.audioContext = new AudioContextCtor();
+    }
+
+    if (state.audioContext.state === 'suspended') {
+        try {
+            await state.audioContext.resume();
+        } catch {
+            // If resume fails we still allow click-based counting.
+        }
+    }
+
+    return state.audioContext;
+}
+
+function playTick() {
+    if (!state.audioContext) {
+        return;
+    }
+
+    const now = state.audioContext.currentTime;
+    const oscillator = state.audioContext.createOscillator();
+    const gainNode = state.audioContext.createGain();
+
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(1200, now);
+    oscillator.frequency.exponentialRampToValueAtTime(860, now + 0.035);
+
+    gainNode.gain.setValueAtTime(0.0001, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.12, now + 0.008);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(state.audioContext.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.065);
+}
+
+function playSuccessChime() {
+    if (!state.audioContext) {
+        return;
+    }
+
+    const now = state.audioContext.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.5];
+
+    notes.forEach((frequency, index) => {
+        const offset = index * 0.08;
+        const oscillator = state.audioContext.createOscillator();
+        const gainNode = state.audioContext.createGain();
+
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(frequency, now + offset);
+        gainNode.gain.setValueAtTime(0.0001, now + offset);
+        gainNode.gain.exponentialRampToValueAtTime(0.16, now + offset + 0.015);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.28);
+
+        oscillator.connect(gainNode);
+        gainNode.connect(state.audioContext.destination);
+        oscillator.start(now + offset);
+        oscillator.stop(now + offset + 0.3);
+    });
+}
+
 function pulseCounter() {
     counterEl.classList.remove('pulse');
-    void counterEl.offsetWidth; // Trigger reflow
+    void counterEl.offsetWidth;
     counterEl.classList.add('pulse');
-    setTimeout(() => counterEl.classList.remove('pulse'), 100);
 }
 
-// Increment counter
+function angleDifference(current, baseline) {
+    const delta = current - baseline;
+    return ((delta + 180) % 360 + 360) % 360 - 180;
+}
+
+function getOrientationReading(event) {
+    if (typeof event.gamma === 'number' && Number.isFinite(event.gamma)) {
+        return { axis: 'gamma', value: event.gamma };
+    }
+
+    if (typeof event.beta === 'number' && Number.isFinite(event.beta)) {
+        return { axis: 'beta', value: event.beta };
+    }
+
+    return null;
+}
+
 function incrementCounter() {
-    if (!isStarted) return;
-    
-    counter++;
-    counterEl.textContent = counter;
+    if (!state.started) {
+        return;
+    }
+
+    state.counter += 1;
+    counterEl.textContent = String(state.counter);
     pulseCounter();
     playTick();
-    
-    if (counter >= 108) {
-        counter = 0;
-        counterEl.textContent = '0';
-        rounds++;
-        roundsEl.textContent = rounds;
-        localStorage.setItem('japaRounds', rounds.toString());
-        playSuccessChime();
-        counterEl.classList.add('success-chime');
-        setTimeout(() => counterEl.classList.remove('success-chime'), 500);
+
+    if (state.counter < COUNTER_LIMIT) {
+        return;
     }
+
+    state.counter = 0;
+    state.totalRounds += 1;
+    writeStoredNumber(STORAGE_KEYS.totalRounds, state.totalRounds);
+    counterEl.textContent = '0';
+    roundsEl.textContent = String(state.totalRounds);
+    playSuccessChime();
+    setStatus('Round complete.');
 }
 
-// Device Orientation handling
 function handleOrientation(event) {
-    if (!isStarted || baselineGamma === null) return;
-    
-    const gamma = event.gamma;
-    if (gamma === null) return;
-    
-    // Check if twisting (gamma outside 40 degrees from baseline)
-    if (Math.abs(gamma - baselineGamma) > 40) {
-        isTwisting = true;
+    if (!state.started) {
+        return;
     }
-    
-    // Check if returning to baseline (within 10 degrees)
-    if (isTwisting && Math.abs(gamma - baselineGamma) <= 10) {
+
+    const reading = getOrientationReading(event);
+    if (!reading) {
+        return;
+    }
+
+    if (!state.axis) {
+        state.axis = reading.axis;
+    }
+
+    if (state.baseline === null) {
+        state.baseline = reading.value;
+        state.armed = false;
+        setStatus(`Baseline saved on ${state.axis}. Twist away, then return.`);
+        return;
+    }
+
+    const delta = Math.abs(angleDifference(reading.value, state.baseline));
+
+    if (delta > ARM_THRESHOLD) {
+        state.armed = true;
+        return;
+    }
+
+    if (state.armed && delta <= RESET_THRESHOLD) {
+        state.armed = false;
         incrementCounter();
-        isTwisting = false;
     }
 }
 
-// Start button handler
-startBtn.addEventListener('click', async () => {
-    if (isStarted) return;
-    
-    initAudio();
-    
-    // Request permissions for iOS 13+
+async function startSession() {
+    if (state.started) {
+        return;
+    }
+
+    state.started = true;
+    startBtn.disabled = true;
+    startBtn.textContent = 'Running';
+
+    const audioReadyPromise = initAudio();
+
+    window.addEventListener('deviceorientation', handleOrientation, { passive: true });
+
+    let permissionPromise = Promise.resolve('granted');
+    let permissionIsSupported = false;
+
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
         try {
-            const permission = await DeviceOrientationEvent.requestPermission();
-            if (permission === 'granted') {
-                window.addEventListener('deviceorientation', handleOrientation);
-                statusEl.textContent = 'Orientation tracking enabled';
-            } else {
-                statusEl.textContent = 'Orientation permission denied';
-            }
-        } catch (error) {
-            statusEl.textContent = 'Error requesting permission: ' + error.message;
+            permissionIsSupported = true;
+            permissionPromise = DeviceOrientationEvent.requestPermission().catch(() => 'denied');
+        } catch {
+            permissionPromise = Promise.resolve('denied');
         }
-    } else {
-        // Non-iOS 13+ devices
-        window.addEventListener('deviceorientation', handleOrientation);
-        statusEl.textContent = 'Orientation tracking enabled';
     }
-    
-    // Set baseline
-    baselineGamma = null;
-    setTimeout(() => {
-        if (window.orientationEventValue !== undefined) {
-            baselineGamma = window.orientationEventValue;
-            statusEl.textContent = `Calibrated (baseline: ${baselineGamma.toFixed(1)}°)`;
+
+    const permission = await permissionPromise;
+    await audioReadyPromise;
+
+    if (permissionIsSupported) {
+        if (permission === 'granted') {
+            setStatus('Hold the phone steady for calibration.');
+        } else {
+            setStatus('Orientation permission denied. Tap anywhere to count.');
         }
-    }, 500);
-    
-    isStarted = true;
-    startBtn.disabled = true;
-    startBtn.textContent = 'Started';
-});
-
-// Touch/click on body to increment
-document.body.addEventListener('click', (e) => {
-    if (e.target === document.body && isStarted) {
-        incrementCounter();
+        return;
     }
-});
 
-// Track initial gamma for baseline
-window.addEventListener('deviceorientation', (event) => {
-    if (!isStarted && event.gamma !== null) {
-        window.orientationEventValue = event.gamma;
+    setStatus('Hold the phone steady for calibration.');
+}
+
+startBtn.addEventListener('click', startSession);
+
+document.addEventListener('click', (event) => {
+    if (!state.started) {
+        return;
     }
+
+    if (event.target.closest('#startBtn')) {
+        return;
+    }
+
+    incrementCounter();
 });
